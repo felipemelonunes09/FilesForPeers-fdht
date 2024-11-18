@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ResourcesService } from './resources.service';
 import { ResourcesController } from './resources.controller';
 import { MulterModule } from '@nestjs/platform-express';
+import { ConfigModule } from '@nestjs/config'
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 
@@ -16,6 +17,7 @@ import { extname } from 'path';
         }
       })
     }),
+    ConfigModule
   ],
   controllers: [ResourcesController],
   providers: [ResourcesService],

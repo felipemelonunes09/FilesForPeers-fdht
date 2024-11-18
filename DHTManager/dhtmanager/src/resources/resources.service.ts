@@ -1,18 +1,19 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { CreateResourceDto } from './dto/create-resource.dto';
-import { UpdateResourceDto } from './dto/update-resource.dto';
 import { Resource } from './entities/resource.entity';
 import { readdirSync, statSync } from 'fs';
 import { extname, join } from 'path';
-import { error } from 'console';
+import { ConfigService } from '@nestjs/config'
 
 @Injectable()
 export class ResourcesService {
   // should be in a configuration service
   private readonly uploadDir = './resources'
 
+  constructor(private configService: ConfigService) {}
+
   public getFilesLocation(): Array<Resource> {
     try {
+      const uploadDir = this.configService.get<string>('resourcesDirPath')
       const files = readdirSync(this.uploadDir);
       const resources: Resource[] = files.map(file => {
         const filePath = join(this.uploadDir, file)
