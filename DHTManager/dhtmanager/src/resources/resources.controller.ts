@@ -3,6 +3,7 @@ import { ResourcesService } from './resources.service';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { UpdateResourceDto } from './dto/update-resource.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Resource } from './entities/resource.entity';
 
 @Controller('resources')
 export class ResourcesController {
@@ -16,25 +17,9 @@ export class ResourcesController {
       filePath: file.path
     }
   }
-  /*
-  @Post()
-  create(@Body() createResourceDto: CreateResourceDto) {
-    return this.resourcesService.create(createResourceDto);
-  }
 
   @Get()
-  findAll() {
-    return this.resourcesService.findAll();
+  findAll(): Array<Resource> {
+    return this.resourcesService.getFilesLocation();
   }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.resourcesService.findOne(+id);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.resourcesService.remove(+id);
-  }
-  */
 }
