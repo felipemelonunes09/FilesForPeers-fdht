@@ -1,5 +1,7 @@
 export function configuration() {
     return {
-        resourcesDirPath: "./resources"
+        resourcesDirPath: "./resources",
+        hashtableFileDir: "./hashtable",
+        hashtableFilePath: "./hashtable/hashtable.json",
     }
 }
