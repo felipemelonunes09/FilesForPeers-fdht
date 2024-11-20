@@ -3,6 +3,8 @@ import { Hashtable } from './entities/hashtable.entity';
 import { ConfigService } from '@nestjs/config'
 import { promises as fs } from 'fs'; 
 import path from 'path';
+import { CreateFileEntryDto } from './dto/create-filetableentry.dto';
+import { FileTableEntry } from './entities/filetableentry.entity';
 
 @Injectable()
 export class HashtableService {
@@ -32,8 +34,13 @@ export class HashtableService {
     await fs.writeFile(this.configService.get("hashtableFilePath"), JSON.stringify(this.table))
   }
 
-  async create(createHashtableDto: any) {
-    return 'This action adds a new hashtable';
+  async create(createFileEntryDto: CreateFileEntryDto) {
+    const fileEntry = Object.assign(new FileTableEntry(), createFileEntryDto)
+    const currentDate = new Date()
+    fileEntry.createdAt = currentDate
+    fileEntry.updatedAt = currentDate
+    // needs to verify colisions // i
+    this.table[fileEntry.name] = fileEntry
   }
 
   async findAll() {

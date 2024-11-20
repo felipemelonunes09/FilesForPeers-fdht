@@ -6,4 +6,6 @@ export class FileTableEntry {
     peer_id: number
     description: string
     tags: Array<string>
+    createdAt: Date
+    updatedAt: Date
 }
