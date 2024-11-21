@@ -3,6 +3,7 @@ import { HashtableService } from './hashtable.service';
 import { HashtableController } from './hashtable.controller';
 
 @Module({
+  exports: [HashtableService],
   controllers: [HashtableController],
   providers: [HashtableService],
 })

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { Hashtable } from './entities/hashtable.entity';
 import { ConfigService } from '@nestjs/config'
 import { promises as fs } from 'fs'; 
@@ -31,16 +31,26 @@ export class HashtableService {
 
   private async createHashTable() {
     await fs.mkdir(this.configService.get("hashtableFileDir"), { recursive: true })
-    await fs.writeFile(this.configService.get("hashtableFilePath"), JSON.stringify(this.table))
+    this.saveHashTable()
   }
 
-  async create(createFileEntryDto: CreateFileEntryDto) {
+  private async saveHashTable() {
+     fs.writeFile(this.configService.get("hashtableFilePath"), JSON.stringify(this.table))
+  }
+
+  async create(createFileEntryDto: CreateFileEntryDto): Promise<any> {
     const fileEntry = Object.assign(new FileTableEntry(), createFileEntryDto)
     const currentDate = new Date()
     fileEntry.createdAt = currentDate
     fileEntry.updatedAt = currentDate
-    // needs to verify colisions // i
-    this.table[fileEntry.name] = fileEntry
+
+    if (this.table[fileEntry.name] == undefined) {
+      this.table[fileEntry.name] = fileEntry
+      this.saveHashTable()
+      return fileEntry
+    }
+    else
+      return new BadRequestException("There ir already a entry with this file name")
   }
 
   async findAll() {
