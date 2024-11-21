@@ -5,6 +5,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { ConfigModule } from '@nestjs/config'
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { HashtableModule } from 'src/hashtable/hashtable.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { extname } from 'path';
         }
       })
     }),
-    ConfigModule
+    ConfigModule,
+    HashtableModule
   ],
   controllers: [ResourcesController],
   providers: [ResourcesService],
