@@ -3,6 +3,7 @@
 *node_modules
 *build
 *hashtable.json
+__pycache__
 
 # Logs
 logs
