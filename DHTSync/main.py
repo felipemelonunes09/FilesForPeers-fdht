@@ -7,15 +7,35 @@ import pickle
 import json
 
 class Server():
-    
-    hashtable: dict                 = dict()
-    configuration: dict[str, dict]  = dict()
-    logger: logging.Logger          = logging.getLogger(__name__)
-    
-    class ClientConnectionThread():
-        pass
-    class ServerConnectionThread():
-        pass
+    class ConnectionPool():
+        class ConnectionThread(threading.Thread):
+            def __init__(self, connection: socket.socket, address: tuple[str, int]) -> None:
+                self.__connection = connection
+                self.__adress = address
+                super().__init__()
+                
+            def run(self) -> None:
+                Server.ConnectionPool.__pool.remove(id(self))
+            
+        class ClientConnectionThread(ConnectionThread):
+            def run(self) -> None:
+                return super().run()
+            
+        class ServerConnectionThread(ConnectionThread):
+            def run(self) -> None:
+                return super().run()
+            
+        __pool: set[int] = set()
+        __lock: threading.Lock = threading.Lock()
+        __limit: int = globals.THREAD_POOL_LIMIT
+            
+        def add_connection_thread(self, thread: ConnectionThread) -> bool:
+            with self.__lock:
+                if len(self.__pool) < self.__limit:
+                    self.__pool.add(id(thread))
+                    thread.start()
+                    return True
+                return False
     
     class RequestUDHTThread(threading.Thread):
         def __init__(self, udht_connection: tuple[str, int]) -> None:
@@ -43,6 +63,10 @@ class Server():
             except socket.error as e:
                 Server.logger.error(f"Socket error message: {e}")
 
+    hashtable: dict                 = dict()
+    configuration: dict[str, dict]  = dict()
+    logger: logging.Logger          = logging.getLogger(__name__)
+    thread_pool: ConnectionPool     = ConnectionPool()
     
     def __init__(self) -> None:
         Server.logger.setLevel(logging.INFO)
@@ -58,10 +82,19 @@ class Server():
         self.run()
     
     def run(self) -> None:
-        self.logger.info('Server running')
+        self.logger.info('Server running on listen mode...')
+        connection  = (self.configuration['fdht']['sync']['ip'], self.configuration['fdht']['sync']['port'])
+        pool_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        pool_socket.bind(connection)
+        pool_socket.listen(globals.SOCKET_CONNECTION_LIMIT)
+        
+        while True:
+            in_connection, in_address = pool_socket.accept()
+            self.logger.info(f'Incoming connection from {in_address}')
+            client_thread = Server.ConnectionPool.ClientConnectionThread(in_connection, in_address)
     
     def __setup_hashtable(self) -> None:
-        connection = (self.configuration['udht']['manager']['ip'], int(self.configuration['udht']['manager']['port']))
+        connection = (self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])
         thread = Server.RequestUDHTThread(udht_connection=connection)
         thread.start()
         thread.join()
