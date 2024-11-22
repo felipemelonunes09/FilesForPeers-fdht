@@ -84,6 +84,7 @@ class Server():
                 encoded_hashtable = json.dumps(self.hashtable).encode(globals.ENCODING)
                 conn.sendall(encoded_hashtable)
                 Server.merge_hashtables(decoded_hashtable)
+                Server.logger.warning(f"Finished hashtable merge --hashtable not persisted await for the next job schedule")
                 return super().run()
             
         class ServerConnectionThread(ConnectionThread):
@@ -215,6 +216,8 @@ class Server():
                 Server.logger.info(f"Updated peer {key} to in-memory hashtable --diff: {Server.diff_count}")
                 Server.hashtable[key] = peer_hashtable[key]
                 Server.changes.add(key)
+        
+        Server.logger.info(f"Finished hashtable merge in-memory-hashtable: {len(Server.hashtable)} entries")
                 
                          
 
