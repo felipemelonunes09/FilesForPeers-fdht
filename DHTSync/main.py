@@ -107,5 +107,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     server = Server()
     server.start()
-    server.run()
 
