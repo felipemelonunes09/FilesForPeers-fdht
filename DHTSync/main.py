@@ -13,12 +13,16 @@ class Server():
                 self.__connection = connection
                 self.__adress = address
                 super().__init__()
+            
+            def get_adress(self) -> tuple[str, int]:
+                return self.__adress
                 
             def run(self) -> None:
-                Server.ConnectionPool.__pool.remove(id(self))
+                Server.ConnectionPool.remove_thread(id(self))
             
         class ClientConnectionThread(ConnectionThread):
             def run(self) -> None:
+                Server.logger.info(f"Starting client connection thread sync with: {self.get_adress()}")
                 return super().run()
             
         class ServerConnectionThread(ConnectionThread):
@@ -36,6 +40,11 @@ class Server():
                     thread.start()
                     return True
                 return False
+        
+        @staticmethod
+        def remove_thread(id: str) -> None:
+            with Server.ConnectionPool.__lock:
+                Server.ConnectionPool.__pool.remove(id)
     
     class RequestUDHTThread(threading.Thread):
         def __init__(self, udht_connection: tuple[str, int]) -> None:
@@ -84,6 +93,7 @@ class Server():
     def run(self) -> None:
         self.logger.info('Server running on listen mode...')
         connection  = (self.configuration['fdht']['sync']['ip'], self.configuration['fdht']['sync']['port'])
+        self.logger.info(f'Listening on {connection}')
         pool_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         pool_socket.bind(connection)
         pool_socket.listen(globals.SOCKET_CONNECTION_LIMIT)
@@ -92,6 +102,7 @@ class Server():
             in_connection, in_address = pool_socket.accept()
             self.logger.info(f'Incoming connection from {in_address}')
             client_thread = Server.ConnectionPool.ClientConnectionThread(in_connection, in_address)
+            self.thread_pool.add_connection_thread(client_thread)
     
     def __setup_hashtable(self) -> None:
         connection = (self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])
