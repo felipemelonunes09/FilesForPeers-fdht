@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any
+import datetime
 import logging
 import threading
 import globals
@@ -151,6 +152,8 @@ class Server():
     changes: dict[str, dict]        = dict()
     logger: logging.Logger          = logging.getLogger(__name__)
     thread_pool: ConnectionPool     = ConnectionPool()
+    diff_count: int                 = 0
+    changes: set[str]               = set()
     
     def __init__(self) -> None:
         Server.logger.setLevel(logging.INFO)
@@ -195,6 +198,25 @@ class Server():
         conflict_keys = set(peer_hashtable.keys()) & set(Server.hashtable.keys())
         Server.logger.info(f"Peer diff: {len(unique_keys)} entries")
         Server.logger.info(f"Peer conflict: {len(conflict_keys)} entries")
+        for key in unique_keys:
+            Server.hashtable[key] = peer_hashtable[key]
+            Server.diff_count += 1
+            Server.logger.info(f"Added peer {key} to in-memory hashtable --diff: {Server.diff_count}")
+            
+        for key in conflict_keys:
+            Server.logger.info(f"Peer conflict: {key} --resolution: 002.1")
+            client_updated_at = peer_hashtable.get(key).get('updatedAt')
+            server_updated_at = Server.hashtable.get(key).get('updatedAt')
+            client_updated_at = datetime.datetime.strptime(client_updated_at, '%Y-%m-%d %H:%M:%S.%f')
+            server_updated_at = datetime.datetime.strptime(server_updated_at, '%Y-%m-%d %H:%M:%S.%f')
+            
+            if client_updated_at > server_updated_at: 
+                Server.diff_count += 1
+                Server.logger.info(f"Updated peer {key} to in-memory hashtable --diff: {Server.diff_count}")
+                Server.hashtable[key] = peer_hashtable[key]
+                Server.changes.add(key)
+                
+                         
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
