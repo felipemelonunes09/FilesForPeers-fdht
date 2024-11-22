@@ -1,32 +1,34 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import { HashtableService } from './hashtable.service';
+import { CreateFileEntryDto } from './dto/create-filetableentry.dto';
+import { UpdateFileEntryDto } from './dto/update-filetableentry.dto';
 
 @Controller('hashtable')
 export class HashtableController {
   constructor(private readonly hashtableService: HashtableService) {}
 
   @Post()
-  create(@Body() createHashtableDto: any) {
-    return this.hashtableService.create(createHashtableDto);
+  async create(@Body() createFileEntryDto: CreateFileEntryDto) {
+    return this.hashtableService.create(createFileEntryDto);
   }
 
   @Get()
-  findAll() {
+  async findAll() {
     return this.hashtableService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.hashtableService.findOne(+id);
+  @Get(':name')
+  async findOne(@Param('name') key: string) {
+    return this.hashtableService.findOne(key);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateHashtableDto: any) {
-    return this.hashtableService.update(+id, updateHashtableDto);
+  @Patch(':name')
+  async update(@Param('name') key: string, @Body() updateFileEntryDto: UpdateFileEntryDto) {
+    return this.hashtableService.update(key, updateFileEntryDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.hashtableService.remove(+id);
+  @Delete(':name')
+  async remove(@Param('name') key: string) {
+    return this.hashtableService.remove(key);
   }
 }

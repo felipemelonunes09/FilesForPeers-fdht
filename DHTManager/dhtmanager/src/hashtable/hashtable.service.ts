@@ -1,10 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, HttpCode, HttpException, HttpStatus, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Hashtable } from './entities/hashtable.entity';
 import { ConfigService } from '@nestjs/config'
 import { promises as fs } from 'fs'; 
-import path from 'path';
 import { CreateFileEntryDto } from './dto/create-filetableentry.dto';
 import { FileTableEntry } from './entities/filetableentry.entity';
+import { UpdateFileEntryDto } from './dto/update-filetableentry.dto';
 
 @Injectable()
 export class HashtableService {
@@ -14,7 +14,7 @@ export class HashtableService {
     this.loadHashTable()
   }
 
-  private async loadHashTable() {
+  private async loadHashTable(): Promise<void> {
     try {
       const filePath = this.configService.get("hashtableFilePath")
       this.table = new Hashtable()
@@ -29,16 +29,16 @@ export class HashtableService {
     }
   }
 
-  private async createHashTable() {
+  private async createHashTable(): Promise<void>  {
     await fs.mkdir(this.configService.get("hashtableFileDir"), { recursive: true })
     this.saveHashTable()
   }
 
-  private async saveHashTable() {
+  private async saveHashTable():Promise<void>  {
      fs.writeFile(this.configService.get("hashtableFilePath"), JSON.stringify(this.table))
   }
 
-  async create(createFileEntryDto: CreateFileEntryDto): Promise<any> {
+  async create(createFileEntryDto: CreateFileEntryDto): Promise<FileTableEntry> {
     const fileEntry = Object.assign(new FileTableEntry(), createFileEntryDto)
     const currentDate = new Date()
     fileEntry.createdAt = currentDate
@@ -50,21 +50,34 @@ export class HashtableService {
       return fileEntry
     }
     else
-      return new BadRequestException("There ir already a entry with this file name")
+      throw new HttpException("File name it's already in the hashtable", HttpStatus.BAD_REQUEST);
   }
 
-  async findAll() {
-    return `This action returns all hashtable`;
+  async findAll(): Promise<Hashtable> {
+    return this.table
   }
 
-  async findOne(id: number) {
-    return `This action returns a #${id} hashtable`;
+  async findOne(key: string): Promise<FileTableEntry> {
+    if (this.table[key] == undefined)
+      throw new HttpException("File not found", HttpStatus.NOT_FOUND)
+    return this.table[key]
   }
 
-  async update(id: number, updateHashtableDto: any) {
-    return `This action updates a #${id} hashtable`;
+  async update(key: string, updateFileEntryDto: UpdateFileEntryDto): Promise<FileTableEntry> {
+    if (this.table[updateFileEntryDto.name] == undefined)
+      throw new HttpException("File not found", HttpStatus.NOT_FOUND)
+
+    const fileEntry = Object.assign(new FileTableEntry(), updateFileEntryDto)
+    const currentDate = new Date()
+    fileEntry.updatedAt = currentDate
+    this.table[updateFileEntryDto.name] = fileEntry
+    return fileEntry
   }
-  async remove(id: number) {
-    return `This action removes a #${id} hashtable`;
+
+  async remove(key: string):Promise<void> {
+    if (this.table[key] == undefined)
+      throw new HttpException("File not found", HttpStatus.NOT_FOUND)
+    delete this.table[key]
+    this.saveHashTable()
   }
 }
