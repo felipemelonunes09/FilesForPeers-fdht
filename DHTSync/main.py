@@ -230,8 +230,8 @@ class Server():
     def __setup_jobs(self) -> None:
         connection = self.get_service_connection()
         
-        self.scheduler.add_job(self.TableSyncJob(connection), 'interval', seconds=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
-        self.scheduler.add_job(self.PeerSyncJob(), 'inverval', seconds=globals.SCHEDULER_PEER_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.add_job(self.TableSyncJob(connection), 'interval', minutes=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.add_job(self.PeerSyncJob(), 'inverval', minutes=globals.SCHEDULER_PEER_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
         self.scheduler.start()
         Server.logger.info("Sheduler started --resolution: \n(+)\t awaiting for TableSyncJob\n(+)\t awaiting for PeerSyncJob")
     
