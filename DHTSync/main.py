@@ -45,7 +45,6 @@ class TCPHashtableConnection(HashTableConnection):
         hashtable = self.__sock.recv(1024)
         if self.__keep_alive == False and self.__connected:
             self.close()
-            self.__connected = False
         return pickle.loads(hashtable)
     
     def send_hashtable_entry(self, entry: dict) -> None:
@@ -56,11 +55,12 @@ class TCPHashtableConnection(HashTableConnection):
         self.__entry_payload['data'] = entry
         data = json.dumps(self.__entry_payload).encode(self.__encoding)
         Server.logger.info(f'Sending {data} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
-        self.__sock.sendall(data)
+        self.__sock.send(data + b'\n')
+        response = self.__sock.recv(1024)
+        Server.logger.info(f'Received {response} from service --resolution: finish method')
         if self.__keep_alive == False and self.__connected:
             self.close()
-            self.__connected = False
-        
+            
     def set_keep_alive(self, keep: bool) -> None:
         self.__keep_alive = keep
         
