@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Type
+import requests
 import datetime
 import logging
 import threading
@@ -11,8 +12,12 @@ import pickle
 import json
 
 class HashTableConnection(ABC):
-    def __init__(self, *args, **kwd) -> None:
+    def __init__(self, address: tuple[str, int], *args, **kwd) -> None:
+        self.__address=address
         super().__init__()
+    
+    def get_adress(self) -> tuple[str, int]:
+        return self.__address
     
     @abstractmethod
     def send_hashtable_entry(self, entry: dict) -> None:
@@ -70,14 +75,40 @@ class TCPHashtableConnection(HashTableConnection):
             self.__sock.sendall(json.dumps(self.__close_payload).encode(self.__encoding))
             self.__sock.close()
             self.__connected = False
+            
+class RESTHashtableConnection(HashTableConnection):
+    def __init__(self, address: tuple[str, int], *args, **kwd) -> None:
+        self.__url = f"http://{address[0]}:{address[1]}/hashtable"
+        super().__init__(address, *args, **kwd)
+        
+    def receive_hashtable(self, payload: Any=None) -> dict[str, dict]:
+        Server.logger.info(f"Making request to {self.__url}")
+        response = requests.get(self.__url)
+        response.raise_for_status()
+        response = response.json()
+        return response
+    
+    def send_hashtable_entry(self, entry: dict) -> None:
+        try:
+            Server.logger.info(f"Sending {entry} with REST-Connection to {self.__url}")
+            response = requests.post(self.__url, json=entry)
+            Server.logger.info(f"Server response: {response.json()}")
+            response.raise_for_status()
+        except Exception as e:
+            Server.logger.error(f"Unexpected error when sending request --resolution: {e}")
 
 class Server():
     class PeerSyncJob():
-        def __call__(self, hashtable: dict[str, dict]) -> Any:
+        def __init__(self, address) -> None:
+            connection=TCPHashtableConnection(address)
+            self.__hashtable = connection.receive_hashtable()
+        
+        def __call__(self) -> Any:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            hashtable = self.__hashtable
             for key in hashtable:
-                peer_ip = hashtable[key].get("peer_ip", None)
-                peer_port = hashtable[key].get("peer_port", None)
+                peer_ip = hashtable[key].get("ip", None)
+                peer_port = hashtable[key].get("port", None)
                 sock.connect((peer_ip, int(peer_port)))
                 sock.send(json.dumps(hashtable).encode(globals.ENCODING))
                 peer_hashtable = sock.recv(1024)
@@ -177,10 +208,11 @@ class Server():
                 Server.logger.info(f'User Hash Table entries {len(Server.hashtable)}')
                 super().run()
             except ConnectionRefusedError as e:
-                Server.logger.info(f'RequestUDHTThread finished --resolution: connection-refused: {e}')
+                Server.logger.error(f'RequestUDHTThread finished --resolution: connection-refused: {e}')
             except ConnectionError as e:
-                Server.logger.info(f'RequestUDHTThread finished --resolution: connection-error: {e}')
-
+                Server.logger.error(f'RequestUDHTThread finished --resolution: connection-error: {e}')
+            except Exception as e:
+                Server.logger.error(f"Unexpected error --resolution: {e}")
     
     hashtable: dict[str, dict]      = dict()
     configuration: dict[str, dict]  = dict()
@@ -189,10 +221,13 @@ class Server():
     thread_pool: ConnectionPool     = ConnectionPool()
     diff_count: int                 = 0
     changes: set[str]               = set()
+    
+    TCPHashtableConn: TCPHashtableConnection   = TCPHashtableConnection
+    RESTHashtableConn: RESTHashtableConnection = RESTHashtableConnection 
+    
     ## should segregate into another file and use dependency injection
     scheduler: BackgroundScheduler  = BackgroundScheduler()
 
-    
     def __init__(self) -> None:
         Server.logger.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -210,7 +245,6 @@ class Server():
     def run(self) -> None:
         self.logger.info('Server running on listen mode --resolution:\n(+)\t listening for peers')
         connection  = (self.configuration['fdht']['sync']['ip'], self.configuration['fdht']['sync']['port'])
-        self.logger.info(f'Listening on {connection}')
         pool_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         pool_socket.bind(connection)
         pool_socket.listen(globals.SOCKET_CONNECTION_LIMIT)
@@ -222,16 +256,14 @@ class Server():
             self.thread_pool.add_connection_thread(client_thread)
     
     def __setup_hashtable(self) -> None:
-        connection = (self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])
-        thread = Server.DHTThreadRequest(connection=TCPHashtableConnection(connection))
+        thread = Server.DHTThreadRequest(connection=self.get_service_connection()(self.get_connection_tuple()))
         thread.start()
         thread.join()
     
     def __setup_jobs(self) -> None:
         connection = self.get_service_connection()
-        
-        self.scheduler.add_job(self.TableSyncJob(connection), 'interval', minutes=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
-        self.scheduler.add_job(self.PeerSyncJob(), 'inverval', minutes=globals.SCHEDULER_PEER_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.add_job(self.TableSyncJob(connection=connection(self.get_connection_tuple())), 'interval', seconds=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.add_job(self.PeerSyncJob(address=(self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])), 'interval', seconds=globals.SCHEDULER_PEER_SYNC_JOB_HOUR_INTERVAL)
         self.scheduler.start()
         Server.logger.info("Sheduler started --resolution: \n(+)\t awaiting for TableSyncJob\n(+)\t awaiting for PeerSyncJob")
     
@@ -240,11 +272,14 @@ class Server():
             self.configuration = yaml.safe_load(file)
             
     def get_connection_tuple(self) -> tuple[str, int]:
-        ...
+        service_name = self.configuration.get("service").get("name")
+        service_name = service_name.split(":")
+        return (self.configuration[service_name[0]]['manager']['ip'], self.configuration[service_name[0]]['manager']['port'])
     
     def get_service_connection(self) -> HashTableConnection:
-        connection = (self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])
-        return TCPHashtableConnection(connection)
+        connection_atrr = self.configuration.get('service').get('connection')
+        connection_class: Type[HashTableConnection] = getattr(self, connection_atrr)
+        return connection_class
             
     @staticmethod
     def merge_hashtables(peer_hashtable: dict[str, dict]) -> None:
