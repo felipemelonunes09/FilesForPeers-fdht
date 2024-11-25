@@ -72,7 +72,20 @@ class TCPHashtableConnection(HashTableConnection):
             self.__connected = False
 
 class Server():
-    class SyncJob():
+    class PeerSyncJob():
+        def __call__(self, hashtable: dict[str, dict]) -> Any:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            for key in hashtable:
+                peer_ip = hashtable[key].get("peer_ip", None)
+                peer_port = hashtable[key].get("peer_port", None)
+                sock.connect((peer_ip, int(peer_port)))
+                sock.send(json.dumps(hashtable).encode(globals.ENCODING))
+                peer_hashtable = sock.recv(1024)
+                peer_hashtable = json.loads(peer_hashtable.decode(globals.ENCODING))
+                Server.merge_hashtables(peer_hashtable)
+                
+        
+    class TableSyncJob():
         def __init__(self, connection: HashTableConnection) -> None:
             self.__connection = connection
             Server.logger.info(f"Setting connection --resolution: set_keep_alive={isinstance(connection, TCPHashtableConnection)}")
@@ -81,14 +94,6 @@ class Server():
                 
         def get_connection(self) -> HashTableConnection:
             return self.__connection
-    
-    class PeerSyncJob(SyncJob):
-        def __call__(self, *args: Any, **kwds: Any) -> Any:
-            pass
-        
-    class TableSyncJob(SyncJob):
-        def __init__(self, connection: HashTableConnection) -> None:
-            super().__init__(connection)
             
         def __call__(self, hashtable: dict[str, dict]) -> Any:
             Server.logger.info("Starting table sync job --resolution: peer-loop")
@@ -226,6 +231,7 @@ class Server():
         connection = self.get_service_connection()
         
         self.scheduler.add_job(self.TableSyncJob(connection), 'interval', seconds=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.add_job(self.PeerSyncJob(), 'inverval', seconds=globals.SCHEDULER_PEER_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
         self.scheduler.start()
         Server.logger.info("Sheduler started --resolution: \n(+)\t awaiting for TableSyncJob\n(+)\t awaiting for PeerSyncJob")
     
