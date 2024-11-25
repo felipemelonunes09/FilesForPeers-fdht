@@ -1,3 +1,4 @@
+from apscheduler.schedulers.background import BackgroundScheduler
 from abc import ABC, abstractmethod
 from typing import Any
 import datetime
@@ -10,8 +11,11 @@ import pickle
 import json
 
 class HashTableConnection(ABC):
+    def __init__(self, *args, **kwd) -> None:
+        super().__init__()
+    
     @abstractmethod
-    def send_hashtable_entry(self, *args, **kwds) -> None:
+    def send_hashtable_entry(self, entry: dict) -> None:
         pass
             
     @abstractmethod
@@ -22,42 +26,79 @@ class HashTableConnection(ABC):
 ## with the microservice to load the user hashtable
 class TCPHashtableConnection(HashTableConnection):
     def __init__(self, address: tuple[str, int], encoding: str = globals.ENCODING) -> None:
-        self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.__address = address
-        self.__encoding = encoding
-        self.__keep_alive = False
-        self.__connected = False
+        self.__sock                 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.__address              = address
+        self.__encoding             = encoding
+        self.__keep_alive           = False
+        self.__connected            = False
+        self.__entry_payload        = { "message_type": 3, "data": {} }
+        self.__hashtable_payload    = { "message_type": 2 }
         
-    def receive_hashtable(self, payload: dict | None) -> dict[str, dict]:
+    def receive_hashtable(self) -> dict[str, dict]:
         if self.__connected == False:
             Server.logger.info(f'Attemping tcp-connection to: {self.__address}')
             self.__sock.connect(self.__address)
             self.__connected = True
-        if payload:
-            Server.logger.info(f'Sending {payload} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
-            self.__sock.sendall(json.dumps(payload).encode(self.__encoding))
+        Server.logger.info(f'Sending {self.__hashtable_payload} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
+        self.__sock.sendall(json.dumps(self.__hashtable_payload).encode(self.__encoding))
         hashtable = self.__sock.recv(1024)
         if self.__keep_alive:
             self.__sock.close()
             self.__connected = False
         return pickle.loads(hashtable)
     
-    def send_hashtable_entry(self, payload: str) -> None:
+    def send_hashtable_entry(self, entry: dict) -> None:
         if self.__connected == False:
             Server.logger.info(f'Attemping tcp-connection to: {self.__address}')
             self.__sock.connect(self.__address)
             self.__connected = True
-        self.__sock.connect(self.__address)
-        self.__sock.send(payload.encode(self.__encoding))
+        self.__entry_payload['data'] = entry
+        data = json.dumps(self.__entry_payload).encode(self.__encoding)
+        Server.logger.info(f'Sending {data} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
+        self.__sock.sendall(data)
         if self.__keep_alive:
             self.__sock.close()
             self.__connected = False
         
     def set_keep_alive(self, keep: bool) -> None:
-        self.keep_alive = keep
+        self.__keep_alive = keep
         
+    def close(self) -> None:
+        if self.__connected:
+            Server.logger.info(f'Closing tcp-connection to: {self.__address}')
+            self.__sock.close()
+            self.__connected = False
 
 class Server():
+    class SyncJob():
+        def __init__(self, connection: HashTableConnection) -> None:
+            self.__connection = connection
+            Server.logger.info(f"Setting connection --resolution: set_keep_alive={isinstance(connection, TCPHashtableConnection)}")
+            if isinstance(connection, TCPHashtableConnection):
+                connection.set_keep_alive(True)
+                
+        def get_connection(self) -> HashTableConnection:
+            return self.__connection
+    
+    class PeerSyncJob(SyncJob):
+        def __call__(self, *args: Any, **kwds: Any) -> Any:
+            pass
+        
+    class TableSyncJob(SyncJob):
+        def __init__(self, connection: HashTableConnection) -> None:
+            super().__init__(connection)
+            
+        def __call__(self, hashtable: dict[str, dict]) -> Any:
+            Server.logger.info("Starting table sync job --resolution: peer-loop")
+            connection = self.get_connection()
+            Server.logger.info(hashtable)
+            for key in hashtable:
+                Server.logger.info(f"Hashtable key about to be send: --resolution: {key}|")
+                connection.send_hashtable_entry(hashtable.get(key))
+            
+            if isinstance(connection, TCPHashtableConnection):
+                connection.close()
+
     class ConnectionPool():
         class ConnectionThread(threading.Thread):
             def __init__(self, connection: socket.socket, address: tuple[str, int], hashtable: dict[str, dict]) -> None:
@@ -107,23 +148,6 @@ class Server():
         def remove_thread(id: str) -> None:
             with Server.ConnectionPool.__lock:
                 Server.ConnectionPool.__pool.remove(id)
-            
-        def run(self) -> None:
-            try:
-                Server.logger.info('RequestUDHTThread started')
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect(self.dht_connection)
-                sock.send(json.dumps({'message_type': 2}).encode(globals.ENCODING))
-                hash_bin = sock.recv(1024)
-                Server.hashtable = pickle.loads(hash_bin)
-                Server.logger.info('RequestUDHTThread finished --resolution: builded hashtable and closing state')
-                Server.logger.info(f'User Hash Table entries {len(Server.hashtable)}')
-                sock.close()
-                return super().run()
-            except ConnectionError as e:
-                Server.logger.info(f'RequestUDHTThread finished --resolution: connection error: {e}')
-            except ConnectionRefusedError as e:
-                Server.logger.info(f'RequestUDHTThread finished --resolution: connection refused: {e}')
     
     class DHTThreadRequest(threading.Thread):
         def __init__(self, connection: HashTableConnection):
@@ -137,7 +161,7 @@ class Server():
             try:
                 Server.logger.info('RequestUDHTThread started')
                 connection = self.get_connection()
-                hashtable = connection.receive_hashtable(payload={'message_type': 2})
+                hashtable = connection.receive_hashtable()
                 Server.hashtable = hashtable
                 Server.logger.info('RequestUDHTThread finished --resolution: builded hashtable and closing state')
                 Server.logger.info(f'User Hash Table entries {len(Server.hashtable)}')
@@ -155,6 +179,9 @@ class Server():
     thread_pool: ConnectionPool     = ConnectionPool()
     diff_count: int                 = 0
     changes: set[str]               = set()
+    ## should segregate into another file and use dependency injection
+    scheduler: BackgroundScheduler  = BackgroundScheduler()
+
     
     def __init__(self) -> None:
         Server.logger.setLevel(logging.INFO)
@@ -164,13 +191,14 @@ class Server():
         Server.logger.addHandler(handler)
     
     def start(self) -> None:
-        self.logger.info('Server started')
+        self.logger.info('Server started --resolution: \n(+)\tread-config\n(+)\tsetup-hashtable\n(+)\tsetup-jobs')
         self.__read_config()
         self.__setup_hashtable()
+        self.__setup_jobs()
         self.run()
     
     def run(self) -> None:
-        self.logger.info('Server running on listen mode...')
+        self.logger.info('Server running on listen mode --resolution:\n(+)\t listening for peers')
         connection  = (self.configuration['fdht']['sync']['ip'], self.configuration['fdht']['sync']['port'])
         self.logger.info(f'Listening on {connection}')
         pool_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -179,7 +207,7 @@ class Server():
         
         while True:
             in_connection, in_address = pool_socket.accept()
-            self.logger.info(f'Incoming connection from {in_address}')
+            self.logger.info(f'Incoming connection from {in_address} --resolution: creating client connect thread and adding to the pool')
             client_thread = Server.ConnectionPool.ClientConnectionThread(in_connection, in_address, Server.hashtable)
             self.thread_pool.add_connection_thread(client_thread)
     
@@ -189,9 +217,23 @@ class Server():
         thread.start()
         thread.join()
     
+    def __setup_jobs(self) -> None:
+        connection = self.get_service_connection()
+        
+        self.scheduler.add_job(self.TableSyncJob(connection), 'interval', seconds=globals.SCHEDULER_TABLE_SYNC_JOB_HOUR_INTERVAL, args=[Server.hashtable])
+        self.scheduler.start()
+        Server.logger.info("Sheduler started --resolution: \n(+)\t awaiting for TableSyncJob\n(+)\t awaiting for PeerSyncJob")
+    
     def __read_config(self) -> None:
         with open(globals.CONFIG_FILE, 'r') as file:
             self.configuration = yaml.safe_load(file)
+            
+    def get_connection_tuple(self) -> tuple[str, int]:
+        ...
+    
+    def get_service_connection(self) -> HashTableConnection:
+        connection = (self.configuration['udht']['manager']['ip'], self.configuration['udht']['manager']['port'])
+        return TCPHashtableConnection(connection)
             
     @staticmethod
     def merge_hashtables(peer_hashtable: dict[str, dict]) -> None:
