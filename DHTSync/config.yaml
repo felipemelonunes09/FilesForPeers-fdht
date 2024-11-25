@@ -1,6 +1,6 @@
 service:
-  name: 'udht:sync'
-  connection: 'TCPHashtableConnection'
+  name: 'fdht:sync'
+  connection: 'TCPHashtableConn'
 fdht: 
   manager:
     ip: "127.0.0.1"
