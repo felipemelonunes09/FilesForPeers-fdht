@@ -33,6 +33,7 @@ class TCPHashtableConnection(HashTableConnection):
         self.__connected            = False
         self.__entry_payload        = { "message_type": 3, "data": {} }
         self.__hashtable_payload    = { "message_type": 2 }
+        self.__close_payload        = { "message_type": 1 }
         
     def receive_hashtable(self) -> dict[str, dict]:
         if self.__connected == False:
@@ -42,8 +43,8 @@ class TCPHashtableConnection(HashTableConnection):
         Server.logger.info(f'Sending {self.__hashtable_payload} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
         self.__sock.sendall(json.dumps(self.__hashtable_payload).encode(self.__encoding))
         hashtable = self.__sock.recv(1024)
-        if self.__keep_alive:
-            self.__sock.close()
+        if self.__keep_alive == False and self.__connected:
+            self.close()
             self.__connected = False
         return pickle.loads(hashtable)
     
@@ -56,16 +57,17 @@ class TCPHashtableConnection(HashTableConnection):
         data = json.dumps(self.__entry_payload).encode(self.__encoding)
         Server.logger.info(f'Sending {data} with tcp-connection to: {self.__address} with encoding {self.__encoding}')
         self.__sock.sendall(data)
-        if self.__keep_alive:
-            self.__sock.close()
+        if self.__keep_alive == False and self.__connected:
+            self.close()
             self.__connected = False
         
     def set_keep_alive(self, keep: bool) -> None:
         self.__keep_alive = keep
         
     def close(self) -> None:
+        Server.logger.info(f'Attemping to close tcp-connection: {self.__address}')
         if self.__connected:
-            Server.logger.info(f'Closing tcp-connection to: {self.__address}')
+            self.__sock.sendall(json.dumps(self.__close_payload).encode(self.__encoding))
             self.__sock.close()
             self.__connected = False
 
@@ -93,8 +95,11 @@ class Server():
             connection = self.get_connection()
             Server.logger.info(hashtable)
             for key in hashtable:
-                Server.logger.info(f"Hashtable key about to be send: --resolution: {key}|")
-                connection.send_hashtable_entry(hashtable.get(key))
+                try:
+                    Server.logger.info(f"Hashtable key about to be send: --resolution: {key}")
+                    connection.send_hashtable_entry(hashtable.get(key))
+                except Exception as e:
+                    Server.logger.error(f"An error was raised when sending entry: --resolution: {e} --entry: {hashtable.get(key)}")
             
             if isinstance(connection, TCPHashtableConnection):
                 connection.close()
