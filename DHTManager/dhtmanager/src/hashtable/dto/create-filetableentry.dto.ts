@@ -8,4 +8,6 @@ export class CreateFileEntryDto {
     path: string
     @IsNumber()
     size: number
+    @IsString()
+    peerId: number
 }
