@@ -16,6 +16,7 @@ This project aims to utilize a decentralized network for peer-to-peer file shari
 # Team
 
 Felipe Nunes Melo
+
 Henry Miyawaki
 
 # FDHT
